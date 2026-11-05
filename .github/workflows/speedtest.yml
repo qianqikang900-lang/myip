@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: '0 */6 * * *' # 每 6 小时自动执行一次
 
+permissions:
+  contents: write # 👈 关键：赋予 GitHub Actions 对仓库的写入权限
+
 jobs:
   build:
     runs-on: ubuntu-latest
