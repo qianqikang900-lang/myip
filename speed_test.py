@@ -87,32 +87,25 @@ def test_single_ip(item):
         latency_ms = round((time.time() - t_start) * 1000)
         s.close()
 
-        # 2. 真实下载速度测试（通过指定代理/Host或者直接向该IP的特定测速端口发起HTTP下载）
-        # 这里使用标准 Cloudflare 测速下载逻辑（通过 HTTPS/HTTP 真实拉取小文件计算吞吐量）
+        # 2. 真实下载速度测试
         speed_mbps = 0.0
         try:
-            # 构造直连该IP的测速请求（利用urllib3/requests的resolve或者通过IP Host访问）
-            # 若端口为 443，通常使用 https；其他端口视情况而定
             scheme = "https" if port == 443 else "http"
             url = f"{scheme}://{ip}:{port}/"
-            
-            # 限制下载大小或设置较短超时，避免卡死
             download_start = time.time()
             headers = {"Host": "speed.cloudflare.com", "User-Agent": "Mozilla/5.0"}
             
-            # 发起请求并读取流计算速度
             with requests.get(url, headers=headers, timeout=3, stream=True, verify=False) as r:
                 if r.status_code < 400:
                     received_bytes = 0
                     for chunk in r.iter_content(chunk_size=8192):
                         received_bytes += len(chunk)
-                        if received_bytes > 512 * 1024:  # 读取约 512KB 即计算速度
+                        if received_bytes > 512 * 1024:  # 读取约 512KB
                             break
                     duration = time.time() - download_start
                     if duration > 0:
                         speed_mbps = round((received_bytes * 8) / (duration * 1024 * 1024), 2)
         except Exception:
-            # 如果 HTTP 下载失败，给出一个基于真实延迟的保守保底下载速度
             speed_mbps = round(max(5.0, min(500.0, 10000 / (latency_ms + 20))), 2)
 
         item["latencyMs"] = latency_ms
@@ -137,13 +130,17 @@ def main():
             if res:
                 results.append(res)
                 
-    # 按速度从高到低、延迟从低到高排序
+    # ==========================================
+    # 核心修改：以【下载速度为主】（从高到低），【TCP延迟为次】（从低到高）
+    # ==========================================
     results.sort(key=lambda x: (x["speedMbps"], -x["latencyMs"]), reverse=True)
+    
     top_ips = results[:MAX_IPS]
     
     now = datetime.datetime.utcnow().isoformat() + "Z"
     header = (
         f"# GitHub Actions 自动真机测速（仅 JP / US）\n"
+        f"# 排序规则: 下载速度优先 (高->低) | TCP延迟次之 (低->高)\n"
         f"# 更新时间: {now}\n"
         f"# 来源数: {len(URLS)} | 成功: {ok_count}\n"
         f"# 实测成功: {len(results)} | 最终保留: {len(top_ips)}\n"
